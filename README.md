@@ -1,3 +1,6 @@
+This fork modifies compilation to pass in target-cpy=native, and enable avx,
+avx2, etc.
+
 Cargo downloads your Rust project’s dependencies and compiles your project.
 
 Learn more at http://doc.crates.io/
