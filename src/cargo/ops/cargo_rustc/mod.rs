@@ -554,6 +554,11 @@ fn build_base_args(cx: &Context,
         cmd.arg("-C").arg(&format!("opt-level={}", opt_level));
     }
 
+    if opt_level == "3" {
+        cmd.arg("-C").arg("target-cpu=native");
+        cmd.arg("-C").arg("target-feature=+avx,+avx2,+sse4.1,+sse4.2,+movbe");
+    }
+
     // If a panic mode was configured *and* we're not ever going to be used in a
     // plugin, then we can compile with that panic mode.
     //
