@@ -573,7 +573,9 @@ fn build_base_args(cx: &Context,
         if !cx.used_in_plugin.contains(unit) {
             cmd.arg("-C").arg(format!("panic={}", panic));
         }
-    if opt_level == 3 {
+    }
+
+    if opt_level == "3" {
         cmd.arg("-C").arg("target-cpu=native");
         cmd.arg("-C").arg("target-feature=+avx,+avx2,+sse4.1,+sse4.2,+movbe");
     }
