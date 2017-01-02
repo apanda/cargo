@@ -9,6 +9,7 @@ use std::str;
 use cargotest::{sleep_ms, is_nightly};
 use cargotest::support::{project, execs, basic_bin_manifest, basic_lib_manifest};
 use cargotest::support::paths::CargoPathExt;
+use cargotest::support::registry::Package;
 use hamcrest::{assert_that, existing_file, is_not};
 use cargo::util::process;
 
@@ -128,7 +129,7 @@ fn cargo_test_verbose() {
     assert_that(p.cargo_process("test").arg("-v").arg("hello"),
                 execs().with_stderr(format!("\
 [COMPILING] foo v0.5.0 ({url})
-[RUNNING] `rustc src[/]foo.rs [..]`
+[RUNNING] `rustc [..] src[/]foo.rs [..]`
 [FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
 [RUNNING] `[..]target[/]debug[/]deps[/]foo-[..][EXE] hello`", url = p.url()))
                        .with_stdout("
@@ -1587,7 +1588,7 @@ fn example_with_dev_dep() {
 [..]
 [..]
 [..]
-[RUNNING] `rustc [..] --crate-name ex [..] --extern a=[..]`
+[RUNNING] `rustc --crate-name ex [..] --extern a=[..]`
 [FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
 "));
 }
@@ -2058,8 +2059,8 @@ fn bin_does_not_rebuild_tests() {
                 execs().with_status(0)
                        .with_stderr("\
 [COMPILING] foo v0.0.1 ([..])
-[RUNNING] `rustc src[/]main.rs [..]`
-[RUNNING] `rustc src[/]main.rs [..]`
+[RUNNING] `rustc [..] src[/]main.rs [..]`
+[RUNNING] `rustc [..] src[/]main.rs [..]`
 [FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
 "));
 }
@@ -2120,8 +2121,8 @@ fn selective_test_optional_dep() {
                  .arg("--features").arg("a").arg("-p").arg("a"),
                 execs().with_status(0).with_stderr("\
 [COMPILING] a v0.0.1 ([..])
-[RUNNING] `rustc a[/]src[/]lib.rs [..]`
-[RUNNING] `rustc a[/]src[/]lib.rs [..]`
+[RUNNING] `rustc [..] a[/]src[/]lib.rs [..]`
+[RUNNING] `rustc [..] a[/]src[/]lib.rs [..]`
 [FINISHED] debug [unoptimized + debuginfo] target(s) in [..]
 "));
 }
@@ -2397,4 +2398,129 @@ fn test_many_with_features() {
                  .arg("-p").arg("foo")
                  .arg("--features").arg("foo"),
                 execs().with_status(0));
+}
+
+#[test]
+fn test_all_workspace() {
+    let p = project("foo")
+        .file("Cargo.toml", r#"
+            [project]
+            name = "foo"
+            version = "0.1.0"
+
+            [dependencies]
+            bar = { path = "bar" }
+
+            [workspace]
+        "#)
+        .file("src/main.rs", r#"
+            #[test]
+            fn foo_test() {}
+        "#)
+        .file("bar/Cargo.toml", r#"
+            [project]
+            name = "bar"
+            version = "0.1.0"
+        "#)
+        .file("bar/src/lib.rs", r#"
+            #[test]
+            fn bar_test() {}
+        "#);
+    p.build();
+
+    assert_that(p.cargo_process("test")
+                 .arg("--all"),
+                execs().with_stdout_contains("\
+running 1 test
+test foo_test ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+")
+                       .with_stdout_contains("\
+running 1 test
+test bar_test ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+"));
+}
+
+#[test]
+fn test_all_virtual_manifest() {
+    let p = project("workspace")
+        .file("Cargo.toml", r#"
+            [workspace]
+            members = ["a", "b"]
+        "#)
+        .file("a/Cargo.toml", r#"
+            [project]
+            name = "a"
+            version = "0.1.0"
+        "#)
+        .file("a/src/lib.rs", r#"
+            #[test]
+            fn a() {}
+        "#)
+        .file("b/Cargo.toml", r#"
+            [project]
+            name = "b"
+            version = "0.1.0"
+        "#)
+        .file("b/src/lib.rs", r#"
+            #[test]
+            fn b() {}
+        "#);
+    p.build();
+
+    assert_that(p.cargo_process("test")
+                 .arg("--all"),
+                execs().with_stdout_contains("\
+running 1 test
+test b ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+")
+                .with_stdout_contains("\
+running 1 test
+test b ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+"));
+}
+
+#[test]
+fn test_all_member_dependency_same_name() {
+    let p = project("workspace")
+        .file("Cargo.toml", r#"
+            [workspace]
+            members = ["a"]
+        "#)
+        .file("a/Cargo.toml", r#"
+            [project]
+            name = "a"
+            version = "0.1.0"
+
+            [dependencies]
+            a = "0.1.0"
+        "#)
+        .file("a/src/lib.rs", r#"
+            #[test]
+            fn a() {}
+        "#);
+    p.build();
+
+    Package::new("a", "0.1.0").publish();
+
+    assert_that(p.cargo_process("test")
+                 .arg("--all"),
+                execs().with_stdout_contains("\
+running 1 test
+test a ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured
+
+"));
 }

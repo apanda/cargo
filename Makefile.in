@@ -1,4 +1,4 @@
-CFG_RELEASE_NUM=0.16.0
+CFG_RELEASE_NUM=0.17.0
 CFG_RELEASE_LABEL=
 
 OPENSSL_VERS=1.0.2j
@@ -8,20 +8,27 @@ include config.mk
 
 export PATH := $(dir $(CFG_RUSTC)):$(PATH)
 
-ifdef CFG_ENABLE_NIGHTLY
-CFG_RELEASE=$(CFG_RELEASE_NUM)$(CFG_RELEASE_LABEL)-nightly
-CFG_PACKAGE_VERS = nightly
-else
-CFG_RELEASE=$(CFG_RELEASE_NUM)$(CFG_RELEASE_LABEL)
-CFG_PACKAGE_VERS=$(CFG_RELEASE)
+ifeq ($(CFG_RELEASE_CHANNEL),stable)
+CFG_RELEASE=$(CFG_RELEASE_NUM)
+CFG_PACKAGE_VERS=$(CFG_RELEASE_NUM)
+else ifeq ($(CFG_RELEASE_CHANNEL),beta)
+CFG_RELEASE=$(CFG_RELEASE_NUM)-beta$(CFG_PRERELEASE_VERSION)
+CFG_PACKAGE_VERS=beta
+else ifeq ($(CFG_RELEASE_CHANNEL),nightly)
+CFG_RELEASE=$(CFG_RELEASE_NUM)-nightly
+CFG_PACKAGE_VERS=nightly
+else ifeq ($(CFG_RELEASE_CHANNEL),dev)
+CFG_RELEASE=$(CFG_RELEASE_NUM)-dev
+CFG_PACKAGE_VERS=$(CFG_RELEASE_NUM)-dev
 endif
+
 CFG_BUILD_DATE = $(shell date +%F)
 
-ifeq ($(wildcard .git),)
+ifeq ($(wildcard $(CFG_SRC_DIR)/.git),)
 CFG_VERSION = $(CFG_RELEASE) (built $(CFG_BUILD_DATE))
 else
-CFG_VER_DATE = $(shell git log -1 --date=short --pretty=format:'%cd')
-CFG_VER_HASH = $(shell git rev-parse --short HEAD)
+CFG_VER_DATE = $(shell git --git-dir='$(CFG_SRC_DIR).git' log -1 --date=short --pretty=format:'%cd')
+CFG_VER_HASH = $(shell git --git-dir='$(CFG_SRC_DIR).git' rev-parse --short HEAD)
 CFG_VERSION = $(CFG_RELEASE) ($(CFG_VER_HASH) $(CFG_VER_DATE))
 endif
 PKG_NAME = cargo-$(CFG_PACKAGE_VERS)
@@ -96,7 +103,8 @@ test-unit-$(1): target/openssl/$(1).stamp cargo-$(1)
 	@mkdir -p $$(CFG_BUILD_DIR)/target/$(1)/cit
 	$$(CARGO) test --target $(1) \
 		--manifest-path $(S)Cargo.toml \
-		$$(OPT_FLAG) $$(CARGOFLAGS) $$(VERBOSE_FLAG) $$(only)
+		$$(OPT_FLAG) $$(CARGOFLAGS) $$(VERBOSE_FLAG) $$(only) -- \
+		--quiet
 endef
 $(foreach target,$(CFG_TARGET),$(eval $(call CARGO_TARGET,$(target))))
 
@@ -240,7 +248,7 @@ OPENSSL_CFLAGS_i686-unknown-linux-musl := -m32
 
 define BUILD_OPENSSL
 
-ifdef CFG_ENABLE_NIGHTLY
+ifdef CFG_ENABLE_BUILD_OPENSSL
 
 cargo-$(1): export OPENSSL_STATIC := 1
 test-unit-$(1): export OPENSSL_STATIC := 1
@@ -251,6 +259,7 @@ ifdef OPENSSL_OS_$(1)
 
 target/openssl/$(1).stamp: target/openssl/openssl-$$(OPENSSL_VERS).tar.gz \
 		| target/openssl/
+	rm -rf target/openssl/$(1)
 	mkdir -p target/openssl/$(1)
 	tar xf $$< -C target/openssl/$(1) --strip-components 1
 	(cd target/openssl/$(1) && \
@@ -258,7 +267,7 @@ target/openssl/$(1).stamp: target/openssl/openssl-$$(OPENSSL_VERS).tar.gz \
 	 AR=$$(OPENSSL_AR_$(1)) \
 	 $$(SETARCH_$(1)) ./Configure --prefix=$$(OPENSSL_INSTALL_$(1)) \
 	   no-dso $$(OPENSSL_OS_$(1)) -fPIC $$(OPENSSL_CFLAGS_$(1))&& \
-	 $(MAKE) -j10 && \
+	 $(MAKE) -j1 && \
 	 $(MAKE) install)
 	touch $$@
 
@@ -274,7 +283,7 @@ target/openssl/$(1).stamp:
 
 endif
 
-else # !CFG_ENABLE_NIGHTLY
+else # !CFG_ENABLE_BUILD_OPENSSL
 target/openssl/$(1).stamp:
 endif
 
